@@ -1,7 +1,9 @@
 {
-  "functions": { "api/*.js": { "runtime": "nodejs18.x" } },
+  "functions": {
+    "api/*.js": { "runtime": "nodejs18.x" }
+  },
   "rewrites": [
-    { "source": "/coaching", "destination": "/frontend/coaching.html" },
-    { "source": "/", "destination": "/frontend/coaching.html" }
+    { "source": "/", "destination": "/frontend/coaching.html" },
+    { "source": "/coaching", "destination": "/frontend/coaching.html" }
   ]
 }
