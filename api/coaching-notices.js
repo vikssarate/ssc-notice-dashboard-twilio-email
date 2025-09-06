@@ -1,4 +1,7 @@
 export const config = { runtime: "nodejs18.x" };
 export default async function handler(req, res) {
-  res.status(200).json({ ok: true, ping: "coaching-notices alive" });
+  const q = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
+  res.statusCode = 307;
+  res.setHeader("Location", "/api/coach" + q);
+  res.end();
 }
