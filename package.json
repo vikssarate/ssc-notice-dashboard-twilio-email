@@ -1,17 +1,8 @@
 {
   "name": "ssc-notice-dashboard",
   "private": true,
-  "type": "module",
+  "version": "1.0.0",
   "dependencies": {
-    "cheerio": "^1.0.0-rc.12",
-    "web-push": "^3.6.7",
-    "@upstash/redis": "^1.31.5",
-    "nodemailer": "^6.9.13",
-    "twilio": "^4.22.0"
-  },
-  "scripts": {
-    "dev": "vercel dev",
-    "start": "vercel dev",
-    "build": "echo 'Vercel will handle build automatically'"
+    "cheerio": "^1.0.0-rc.12"
   }
 }
