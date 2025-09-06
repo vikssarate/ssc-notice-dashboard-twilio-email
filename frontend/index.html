@@ -1,1 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SSC Notice Board — Dashboard</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <style>
+    :root{--bg:#0f1220;--card:#181c2f;--ink:#eef1ff;--muted:#9aa3c7;--line:#2a3052;--accent:#6ca8ff}
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu}
+    header,footer{padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}
+    h1{margin:0;font-size:18px}
+    .wrap{max-width:1000px;margin:0 auto;padding:16px}
+    .actions{display:flex;gap:8px}
+    .actions input, .actions button{background:#12162a;border:1px solid var(--line);color:var(--ink);padding:8px 10px;border-radius:8px}
+    .chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 16px}
+    .chip{padding:6px 10px;border:1px solid var(--line);border-radius:999px;cursor:pointer}
+    .chip.active{background:var(--accent);border-color:transparent}
+    .list{display:grid;gap:10px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
+    .row1{display:flex;justify-content:space-between;gap:12px}
+    .title{font-weight:600}
+    .meta{color:var(--muted);font-size:12px;display:flex;gap:12px}
+    .links a{margin-right:10px}
+    .badge{border:1px solid var(--line);padding:2px 6px;border-radius:6px;font-size:12px;margin-left:6px}
+    .muted{color:var(--muted)}
+    @media (max-width:640px){.row1{flex-direction:column}}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>SSC Notice Board</h1>
+    <div class="actions">
+      <input id="q" placeholder="Search notices…">
+      <input id="from" type="date" title="From date">
+      <input id="to" type="date" title="To date">
+      <button id="refresh">Refresh</button>
+      <button id="alerts">Enable Alerts</button>
+    </div>
+  </header>
 
+  <main class="wrap">
+    <div id="chips" class="chips"></div>
+    <div id="count" class="muted"></div>
+    <section id="list" class="list"></section>
+  </main>
+
+  <footer>
+    <small>Push/Telegram/Twilio/Email supported. Data via ssc.gov.in.</small>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
