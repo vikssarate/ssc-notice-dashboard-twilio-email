@@ -9,4 +9,4 @@
     { "path": "/api/poll",   "schedule": "0 * * * *" },   // hourly
     { "path": "/api/digest", "schedule": "0 18 * * *" }   // daily 18:00 UTC
   ]
-}
+} 
