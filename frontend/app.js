@@ -1,94 +1,130 @@
-const API_BASE = '/api';
-const CATEGORIES = ['ALL','JE','CHSL','STENO','CGL','MTS','CAPF','CPO','GD','DEPARTMENTAL','OTHERS'];
-const chipsEl = document.getElementById('chips');
-const listEl  = document.getElementById('list');
-const countEl = document.getElementById('count');
-const qEl     = document.getElementById('q');
-const fromEl  = document.getElementById('from');
-const toEl    = document.getElementById('to');
-const refreshEl = document.getElementById('refresh');
-const alertsBtn = document.getElementById('alerts');
+// /frontend/app.js
+// Drives the Coaching Updates panel
 
-let data = [];
-let activeCat = 'ALL';
+const $ = (id) => document.getElementById(id);
 
-function chip(cat){
-  const el = document.createElement('button');
-  el.className = 'chip' + (cat===activeCat? ' active':'');
-  el.textContent = cat;
-  el.onclick = () => { activeCat = cat; render(); };
-  return el;
-}
-
-function fmtDate(d){ try { return new Date(d).toLocaleDateString(); } catch { return d; } }
-
-function passFilters(n){
-  if(activeCat!=='ALL' && !(n.categories||[]).includes(activeCat)) return false;
-  const q = qEl.value.trim().toLowerCase();
-  if(q && !(`${n.title} ${n.date} ${(n.categories||[]).join(' ')}`.toLowerCase().includes(q))) return false;
-  const f = fromEl.value ? new Date(fromEl.value) : null;
-  const t = toEl.value ? new Date(toEl.value) : null;
-  if(f || t){
-    const nd = new Date(n.date || n.ts || Date.now());
-    if(f && nd < f) return false;
-    if(t && nd > new Date(t.getTime()+24*3600*1000)) return false;
-  }
-  return true;
-}
-
-function card(n){
-  const el = document.createElement('div');
-  el.className = 'card';
-  el.innerHTML = `
-    <div class="row1">
-      <div class="title">${n.title || 'Untitled'} ${(n.categories||[]).map(c=>`<span class="badge">${c}</span>`).join('')}</div>
-      <div class="meta"><span>${fmtDate(n.date)}</span><span>${n.size||''}</span></div>
-    </div>
-    <div class="links">
-      ${n.pdf ? `<a href="${n.pdf}" target="_blank" rel="noopener">PDF</a>` : ''}
-      ${n.view ? `<a href="${n.view}" target="_blank" rel="noopener">View</a>` : ''}
-    </div>`;
-  return el;
-}
-
-function render(){
-  chipsEl.innerHTML=''; CATEGORIES.forEach(c=>chipsEl.appendChild(chip(c)));
-  const filtered = data.filter(passFilters);
-  countEl.textContent = `${filtered.length} notice(s)`;
-  listEl.innerHTML=''; filtered.forEach(n=>listEl.appendChild(card(n)));
-}
-
-async function load(){
-  try{
-    const res = await fetch(`${API_BASE}/ssc-notices`);
-    const json = await res.json();
-    data = json.items || [];
-  }catch(e){ console.error(e); data=[]; }
-  render();
-}
-
-refreshEl.onclick = load;
-
-alertsBtn.onclick = async () => {
-  try{
-    const pub = await (await fetch(`${API_BASE}/vapid-public-key`)).json();
-    const reg = await navigator.serviceWorker.register('./sw.js');
-    const sub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(pub.key)
-    });
-    await fetch(`${API_BASE}/subscribe`, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(sub) });
-    alert('Alerts enabled!');
-  }catch(e){ console.error(e); alert('Failed to enable alerts'); }
+const state = {
+  only: "jobs,admit-card,result",
+  limit: 60,
+  debug: 1,                 // set 0 to hide source errors
+  cacheTtlSec: 600,         // 10 minutes client cache
+  q: "",                    // search text
 };
 
-function urlBase64ToUint8Array(base64String){
-  const padding = '='.repeat((4 - base64String.length % 4) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const rawData = atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-  for (let i=0;i<rawData.length;i++) outputArray[i] = rawData.charCodeAt(i);
-  return outputArray;
+function cacheKey() {
+  return `coachFeed:v1:only=${state.only}&limit=${state.limit}`;
 }
 
-window.addEventListener('load', load);
+function saveCache(payload) {
+  try {
+    localStorage.setItem(
+      cacheKey(),
+      JSON.stringify({ t: Date.now(), payload })
+    );
+  } catch {}
+}
+
+function readCache() {
+  try {
+    const raw = localStorage.getItem(cacheKey());
+    if (!raw) return null;
+    const { t, payload } = JSON.parse(raw);
+    if (Date.now() - t > state.cacheTtlSec * 1000) return null;
+    return payload;
+  } catch { return null; }
+}
+
+async function fetchCoachFeed() {
+  const params = new URLSearchParams({
+    only: state.only,
+    limit: String(state.limit),
+    debug: String(state.debug),
+  });
+
+  // Try /api/coach first (simple name avoids filename issues)
+  let res = await fetch(`/api/coach?${params}`);
+  if (res.status === 404) {
+    // Fallback alias
+    res = await fetch(`/api/coaching-notices?${params}`);
+  }
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+function render(listEl, metaEl, data) {
+  const term = state.q.trim().toLowerCase();
+  const items = (data.items || []).filter(x =>
+    !term ||
+    x.title.toLowerCase().includes(term) ||
+    x.source.toLowerCase().includes(term) ||
+    x.channel.toLowerCase().includes(term)
+  );
+
+  listEl.innerHTML = items.map(it => `
+    <li class="row">
+      <span class="chip">${escapeHtml(it.source)}</span>
+      <span class="chip">${escapeHtml(it.channel)}</span>
+      <a href="${it.url}" target="_blank" rel="noopener">${escapeHtml(it.title)}</a>
+      ${it.date ? `<time>${new Date(it.date).toLocaleDateString()}</time>` : "<span></span>"}
+    </li>
+  `).join("") || `<li class="row"><span>No items.</span></li>`;
+
+  metaEl.textContent = `Showing ${items.length} • Updated ${new Date(data.updatedAt).toLocaleTimeString()}`;
+}
+
+function escapeHtml(s){ return (s||"").replace(/[&<>"']/g, m => ({
+  "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+}[m])); }
+
+async function load() {
+  const list = $("list");
+  const meta = $("meta");
+  if (!list || !meta) return;
+
+  list.innerHTML = `<li class="row">Loading…</li>`;
+
+  const cached = readCache();
+  if (cached) render(list, meta, cached);
+
+  try {
+    const data = await fetchCoachFeed();
+    render(list, meta, data);
+    saveCache(data);
+
+    // Optional: log per-source failures when debug=1
+    if (state.debug && data.errors?.length) {
+      console.info("Source errors:", data.errors);
+    }
+  } catch (e) {
+    list.innerHTML = `<li class="row" style="color:#ff7575">Error loading feed: ${escapeHtml(String(e.message||e))}</li>`;
+    meta.textContent = "";
+  }
+}
+
+/* ---------- wire up controls ---------- */
+function setupUI() {
+  const onlySel = $("only");
+  const qInp = $("q");
+  const reloadBtn = $("reload");
+
+  if (onlySel) {
+    onlySel.addEventListener("change", () => {
+      state.only = onlySel.value || "";
+      load();
+    });
+  }
+  if (qInp) {
+    qInp.addEventListener("input", () => {
+      state.q = qInp.value || "";
+      // re-render from cache instantly for snappy filter
+      const cached = readCache();
+      if (cached) render($("list"), $("meta"), cached);
+    });
+  }
+  if (reloadBtn) reloadBtn.addEventListener("click", load);
+}
+
+window.addEventListener("DOMContentLoaded", () => {
+  setupUI();
+  load();
+});
