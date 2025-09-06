@@ -1,7 +1,7 @@
 // api/ssc-notices.js
 
 // Ensure this runs on a Node runtime (NOT Edge)
-export const config = { runtime: "nodejs22.x" }; // 18.x/20.x also OK on Vercel
+export const config = { runtime: "nodejs" }; // or just remove this line (Node.js is default)
 
 import { load as loadHTML } from "cheerio";
 
