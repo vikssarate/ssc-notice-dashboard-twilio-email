@@ -1,100 +1,110 @@
 // api/ssc-notices.js
+// Scrape SSC notice-board PDFs (robust + timeouts)
+export const config = { runtime: "nodejs18.x" };
 
-// Run on Node (not Edge) and prefer Singapore region (closer to SSC)
-export const config = { runtime: "nodejs", regions: ["sin1"] };
-
-import { load as loadHTML } from "cheerio";
+import * as cheerio from "cheerio";           // safer across setups
+const loadHTML = cheerio.load;
 
 const BASE = "https://ssc.gov.in";
-const PAGES = [
-  `${BASE}/notice-board`,
-  `${BASE}/noticeboard`,
-  `${BASE}/Notices`,
-  BASE
+const CANDIDATE_PATHS = [
+  "/notice-board",
+  "/noticeboard",
+  "/notices",
+  "/Notices",
+  "/"
 ];
+const PAGES = CANDIDATE_PATHS.map(p => new URL(p, BASE).toString());
 
-// Slightly shorter timeout so requests never “hang” too long
-const TIMEOUT_MS = Number(process.env.HTTP_TIMEOUT_MS || 8000);
+const TIMEOUT_MS = Number(process.env.HTTP_TIMEOUT_MS || 10000);
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
-// ---- helpers ----
+/* ---------------- helpers ---------------- */
 function absUrl(href, base = BASE) {
   try {
     if (!href) return null;
     if (/^\s*(javascript:|data:|mailto:)/i.test(href)) return null;
     return new URL(href, base).toString();
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 function categoriesFrom(text = "") {
-  const t = text.toUpperCase(), s = new Set(), add = x => s.add(x);
-  if (/\bJE\b/.test(t) || t.includes("JUNIOR ENGINEER")) add("JE");
-  if (/\bCHSL\b/.test(t)) add("CHSL");
-  if (/\bSTENO\b/.test(t) || t.includes("STENOGRAPHER")) add("STENO");
-  if (/\bCGL\b/.test(t)) add("CGL");
-  if (/\bMTS\b/.test(t)) add("MTS");
-  if (/\bCAPF\b/.test(t)) add("CAPF");
-  if (/\bCPO\b/.test(t)) add("CPO");
-  if (/\bGD\b/.test(t)) add("GD");
-  if (/\bDEPARTMENTAL\b/.test(t)) add("DEPARTMENTAL");
+  const t = text.toUpperCase(), s = new Set();
+  if (/\bJE\b/.test(t) || t.includes("JUNIOR ENGINEER")) s.add("JE");
+  if (/\bCHSL\b/.test(t)) s.add("CHSL");
+  if (/\bSTENO\b/.test(t) || t.includes("STENOGRAPHER")) s.add("STENO");
+  if (/\bCGL\b/.test(t)) s.add("CGL");
+  if (/\bMTS\b/.test(t)) s.add("MTS");
+  if (/\bCAPF\b/.test(t)) s.add("CAPF");
+  if (/\bCPO\b/.test(t)) s.add("CPO");
+  if (/\bGD\b/.test(t)) s.add("GD");
+  if (/\bDEPARTMENTAL\b/.test(t)) s.add("DEPARTMENTAL");
   return [...s];
 }
 
-const nearDate = (s="") =>
-  (s.match(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}|\b\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}|\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}\s*(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*\d{4}/i) || [""])[0];
+const nearDate = (s = "") =>
+  (s.match(
+    /(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}|\b\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}|\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}\s*(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*\d{4}/i
+  ) || [""])[0];
 
-const nearSize = (s="") =>
-  (s.match(/\((\d+(?:\.\d+)?)\s*(KB|MB|GB)\)/i) || [""])[0];
+const nearSize = (s = "") => (s.match(/\((\d+(?:\.\d+)?)\s*(KB|MB|GB)\)/i) || [""])[0];
 
-function uniq(items, key = "pdf") {
+function uniq(items, key = x => x.pdf || x.title) {
   const seen = new Set();
   return items.filter(x => {
-    const k = x[key] || x.title;
+    const k = key(x);
     if (!k || seen.has(k)) return false;
     seen.add(k);
     return true;
   });
 }
 
-async function fetchWithTimeout(url, { timeoutMs = TIMEOUT_MS } = {}) {
+async function fetchWithTimeout(url, timeoutMs = TIMEOUT_MS) {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const timer = setTimeout(() => ctrl.abort(new Error("Timeout")), timeoutMs);
   try {
     const res = await fetch(url, {
-      headers: { "user-agent": UA, referer: BASE },
+      headers: { "user-agent": UA, referer: BASE, accept: "text/html,*/*" },
       signal: ctrl.signal,
-      redirect: "follow"
+      redirect: "follow",
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const html = await res.text();
-    if (!html || html.length < 400) throw new Error("empty HTML");
+    if (!html || html.length < 400) throw new Error("Empty HTML");
     return html;
   } finally {
     clearTimeout(timer);
   }
 }
 
-// Fetch all candidates concurrently and return the first success
-async function getFirstWorking() {
-  const tries = await Promise.allSettled(
-    PAGES.map(async url => ({ url, html: await fetchWithTimeout(url) }))
-  );
-  for (const t of tries) if (t.status === "fulfilled") return t.value;
-  const reasons = tries
-    .filter(t => t.status === "rejected")
-    .map(t => t.reason?.message || String(t.reason))
+// Try all candidate pages in parallel; return first success
+async function firstWorkingPage() {
+  const tasks = PAGES.map(async (url) => {
+    const html = await fetchWithTimeout(url);
+    return { url, html };
+  });
+
+  // Manual "any" with detailed reasons (keeps Node 18 happy)
+  const results = await Promise.allSettled(tasks);
+  for (const r of results) if (r.status === "fulfilled") return r.value;
+
+  const reasons = results
+    .filter(r => r.status === "rejected")
+    .map(r => String(r.reason?.message || r.reason))
     .join(" | ");
   throw new Error(`All SSC pages failed: ${reasons}`);
 }
 
+/* ---------------- parser ---------------- */
 function parse(html, base = BASE) {
   const $ = loadHTML(html);
   const items = [];
 
   const containers = [
     ".notice-list, .notices, .list-group, [class*='notice'], [id*='notice']",
-    ".card, li, tr, article, section"
+    ".card, li, tr, article, section, div"
   ];
 
   for (const sel of containers) {
@@ -117,8 +127,10 @@ function parse(html, base = BASE) {
         const size = nearSize(blob);
         const categories = categoriesFrom(title);
 
+        // try to locate a "view/details" link near the PDF
         let view = "";
-        const cand = $a.closest("div,li,tr,section,article")
+        const cand = $a
+          .closest("div,li,tr,section,article")
           .find("a")
           .filter((i, ax) => {
             const t = $(ax).text();
@@ -136,13 +148,14 @@ function parse(html, base = BASE) {
           view,
           date,
           size,
-          categories
+          categories,
         });
       });
     });
     if (items.length) break;
   }
 
+  // last-resort: scan all <a> for PDFs
   if (!items.length) {
     $('a[href$=".pdf"], a[href*=".pdf?"]').each((_, a) => {
       const $a = $(a);
@@ -157,21 +170,29 @@ function parse(html, base = BASE) {
         pdf: href,
         date: nearDate(near),
         size: nearSize(near),
-        categories: categoriesFrom(title)
+        categories: categoriesFrom(title),
       });
     });
   }
 
-  return uniq(items).map(x => ({ ...x, ts: x.date ? Date.parse(x.date) || null : null }));
+  return uniq(items).map(x => ({ ...x, ts: x.date ? (Date.parse(x.date) || null) : null }));
 }
 
+/* ---------------- handler ---------------- */
 export default async function handler(req, res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=3600");
+
   try {
-    const { url, html } = await getFirstWorking();
+    const debug = req.query?.debug === "1";
+    const { url, html } = await firstWorkingPage();
     const items = parse(html);
-    res.status(200).json({ source: url, count: items.length, items });
+
+    const body = { ok: true, source: url, count: items.length, items };
+    if (debug) body.sample = html.slice(0, 500);
+    res.status(200).json(body);
   } catch (e) {
-    res.status(504).json({ error: String(e?.message || e), items: [] });
+    // Return 504 but never crash the function
+    res.status(504).json({ ok: false, error: String(e?.message || e), items: [] });
   }
 }
