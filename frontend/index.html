@@ -1,72 +1,73 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Govt Exams — Coaching Feed</title>
-<style>
-:root{--bg:#0f1220;--card:#181c2f;--ink:#eef1ff;--muted:#9aa3c7;--line:#2a3052;--chip:#2a3052;}
-*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto}
-.wrap{max-width:980px;margin:0 auto;padding:16px}
-.panel{background:var(--card);border-radius:12px;padding:14px;box-shadow:0 0 0 1px var(--line)}
-h1{margin:0 0 12px;font-size:20px}
-ul{list-style:none;padding:0;margin:0}
-li{display:grid;grid-template-columns:auto auto 1fr auto;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
-li:last-child{border-bottom:none}
-.chip{font-size:12px;padding:2px 8px;border-radius:999px;background:var(--chip);color:var(--ink);white-space:nowrap}
-time{color:var(--muted);font-size:12px}
-a{color:var(--ink);text-decoration:none}
-a:hover{text-decoration:underline}
-.controls{display:flex;gap:8px;margin-bottom:12px}
-input,select{background:#0d1020;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
-</style>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Govt Exams — Coaching Feed</title>
+
+  <!-- PWA bits -->
+  <meta name="theme-color" content="#0f1220"/>
+  <link rel="manifest" href="/manifest.webmanifest"/>
+
+  <style>
+    :root{--bg:#0f1220;--card:#181c2f;--ink:#eef1ff;--muted:#9aa3c7;--line:#2a3052;--chip:#2a3052;}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto}
+    .wrap{max-width:980px;margin:0 auto;padding:16px}
+    .panel{background:var(--card);border-radius:12px;padding:14px;box-shadow:0 0 0 1px var(--line)}
+    h1{margin:0 0 12px;font-size:20px}
+    ul{list-style:none;padding:0;margin:0}
+    li{display:grid;grid-template-columns:auto auto 1fr auto;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
+    li:last-child{border-bottom:none}
+    .chip{font-size:12px;padding:2px 8px;border-radius:999px;background:var(--chip);color:var(--ink);white-space:nowrap}
+    time{color:var(--muted);font-size:12px}
+    a{color:var(--ink);text-decoration:none}
+    a:hover{text-decoration:underline}
+    .controls{display:flex;gap:8px;margin-bottom:12px}
+    input,select{background:#0d1020;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+    #status{margin-left:8px;color:#9aa3c7;font-size:12px}
+  </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>Coaching Updates</h1>
-  <div class="panel">
-    <div class="controls">
-      <select id="only">
-        <option value="">All</option>
-        <option value="jobs,admit-card,result" selected>Jobs + Admit + Results</option>
-      </select>
-      <input id="q" placeholder="filter by text (client-side)"/>
-      <button id="reload">Reload</button>
-      <span id="meta" style="margin-left:auto;color:#9aa3c7"></span>
+  <div class="wrap">
+    <h1>Coaching Updates <span id="status"></span></h1>
+    <div class="panel">
+      <div class="controls">
+        <select id="only">
+          <option value="">All</option>
+          <option value="jobs,admit-card,result" selected>Jobs + Admit + Results</option>
+        </select>
+        <input id="q" placeholder="filter by text (client-side)"/>
+        <button id="reload">Reload</button>
+        <span id="meta" style="margin-left:auto;color:#9aa3c7"></span>
+      </div>
+      <ul id="list"></ul>
     </div>
-    <ul id="list"></ul>
   </div>
-</div>
 
-<script type="module">
-const list = document.getElementById("list");
-const meta = document.getElementById("meta");
-const qInp = document.getElementById("q");
-const onlySel = document.getElementById("only");
-document.getElementById("reload").onclick = load;
+  <!-- Service Worker (root) -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').then(reg => {
+        // show a tiny hint the app is cached
+        const el = document.getElementById('status');
+        if (el) el.textContent = '· offline ready';
+        // optional: auto-activate new SW
+        reg.addEventListener('updatefound', () => {
+          const sw = reg.installing;
+          if (!sw) return;
+          sw.addEventListener('statechange', () => {
+            if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+              // new version available; you could show a toast here
+              console.log('New version cached. Reload to update.');
+            }
+          });
+        });
+      }).catch(err => console.log('SW registration failed', err));
+    }
+  </script>
 
-async function load(){
-  list.innerHTML = "<li>Loading…</li>";
-  const params = new URLSearchParams();
-  if (onlySel.value) params.set("only", onlySel.value);
-  params.set("limit","60"); params.set("debug","1");
-  const res = await fetch(`/api/coach?${params.toString()}`);
-  const data = await res.json();
-  const term = qInp.value.trim().toLowerCase();
-  const items = (data.items||[]).filter(x =>
-    !term || x.title.toLowerCase().includes(term) || x.source.toLowerCase().includes(term)
-  );
-  list.innerHTML = items.map(it => `
-    <li>
-      <span class="chip">${it.source}</span>
-      <span class="chip">${it.channel}</span>
-      <a href="${it.url}" target="_blank" rel="noopener">${it.title}</a>
-      ${it.date ? `<time>${new Date(it.date).toLocaleDateString()}</time>` : "<span></span>"}
-    </li>`).join("") || "<li>No items.</li>";
-
-  meta.textContent = `Showing ${items.length} • Updated ${new Date(data.updatedAt).toLocaleTimeString()}`;
-}
-load();
-</script>
+  <!-- App logic (fetches /api/coach with fallbacks, caching, filters) -->
+  <script type="module" src="/frontend/app.js"></script>
 </body>
 </html>
