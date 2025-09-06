@@ -1,1 +1,6 @@
-
+const CACHE='ssc-v3';const ASSETS=['./','./index.html','./app.js','./manifest.webmanifest'];
+self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)));self.skipWaiting();});
+self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))));self.clients.claim();});
+self.addEventListener('fetch',e=>{const u=new URL(e.request.url);if(ASSETS.includes(u.pathname.replace(/\/+/g,'/'))){e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request)));return;}if(u.pathname.includes('/api/ssc-notices')){e.respondWith(fetch(e.request).then(res=>{const copy=res.clone();caches.open(CACHE).then(c=>c.put(e.request,copy));return res;}).catch(()=>caches.match(e.request)));}});
+self.addEventListener('push',evt=>{let d={};try{d=evt.data.json()}catch{d={title:'SSC Update',body:evt.data.text()}};evt.waitUntil(self.registration.showNotification(d.title||'SSC Notice',{body:d.body||'',data:{url:d.url||'/'}}));});
+self.addEventListener('notificationclick',evt=>{evt.notification.close();const url=evt.notification.data&&evt.notification.data.url?evt.notification.data.url:'/';evt.waitUntil(clients.openWindow(url));});
