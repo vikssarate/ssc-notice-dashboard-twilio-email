@@ -1,6 +1,12 @@
 {
+  "rewrites": [
+    { "source": "/", "destination": "/frontend/index.html" },
+    { "source": "/app.js", "destination": "/frontend/app.js" },
+    { "source": "/manifest.webmanifest", "destination": "/frontend/manifest.webmanifest" },
+    { "source": "/sw.js", "destination": "/frontend/sw.js" }
+  ],
   "crons": [
-    { "path": "/api/poll", "schedule": "0 * * * *" },
-    { "path": "/api/digest", "schedule": "0 18 * * *" }
+    { "path": "/api/poll",   "schedule": "0 * * * *" },   // hourly
+    { "path": "/api/digest", "schedule": "0 18 * * *" }   // daily 18:00 UTC
   ]
 }
