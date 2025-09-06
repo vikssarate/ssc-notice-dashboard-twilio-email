@@ -1,7 +1,7 @@
 {
-  "name": "SSC Notice Board",
-  "short_name": "SSC Notices",
-  "start_url": ".",
+  "name": "Coaching Updates — Govt Exams",
+  "short_name": "CoachingFeed",
+  "start_url": "/frontend/coaching.html",
   "display": "standalone",
   "background_color": "#0f1220",
   "theme_color": "#0f1220",
