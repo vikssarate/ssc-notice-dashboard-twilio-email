@@ -1,4 +1,5 @@
-// Aggregates gov-exam updates from multiple coaching/ed-prep sites
+// api/coach.js
+// Aggregates gov-exam updates from top coaching/ed-prep sites (no govt portals)
 export const config = { runtime: "nodejs18.x" };
 
 import * as cheerio from "cheerio";
@@ -166,7 +167,7 @@ function makeWPScraper(label, base, pages) {
   };
 }
 
-/* ============== Sources ============== */
+/* ============== Sources (coaching / ed-prep only) ============== */
 const scrapeTestbook = makeWPScraper("Testbook", "https://testbook.com", [
   { url: "https://testbook.com/blog/latest-govt-jobs/", channel: "jobs" },
   { url: "https://testbook.com/blog/admit-card/", channel: "admit-card" },
@@ -204,64 +205,75 @@ async function scrapeTIME() {
   return out;
 }
 
+// BYJU'S Exam Prep
 const scrapeByjusExamPrep = makeWPScraper("BYJU'S Exam Prep", "https://byjusexamprep.com", [
   { url: "https://byjusexamprep.com/blog/category/government-jobs/", channel: "jobs" },
   { url: "https://byjusexamprep.com/blog/category/admit-cards/", channel: "admit-card" },
   { url: "https://byjusexamprep.com/blog/category/results/", channel: "result" },
 ]);
 
+// Career Power
 const scrapeCareerPower = makeWPScraper("Career Power", "https://www.careerpower.in", [
   { url: "https://www.careerpower.in/blog/category/government-jobs", channel: "jobs" },
   { url: "https://www.careerpower.in/blog/tag/admit-card", channel: "admit-card" },
   { url: "https://www.careerpower.in/blog/category/results", channel: "result" },
 ]);
 
+// PracticeMock
 const scrapePracticeMock = makeWPScraper("PracticeMock", "https://www.practicemock.com", [
   { url: "https://www.practicemock.com/blog/", channel: "news" },
 ]);
 
+// Guidely
 const scrapeGuidely = makeWPScraper("Guidely", "https://guidely.in", [
   { url: "https://guidely.in/blog/category/exams/notifications", channel: "notification" },
   { url: "https://guidely.in/blog/category/exams/admit-card", channel: "admit-card" },
   { url: "https://guidely.in/blog/category/exams/result", channel: "result" },
 ]);
 
+// ixamBee
 const scrapeIxamBee = makeWPScraper("ixamBee", "https://www.ixambee.com", [
   { url: "https://www.ixambee.com/blog/category/jobs", channel: "jobs" },
   { url: "https://www.ixambee.com/blog/category/admit-card", channel: "admit-card" },
   { url: "https://www.ixambee.com/blog/category/result", channel: "result" },
 ]);
 
+// BankersDaily
 const scrapeBankersDaily = makeWPScraper("BankersDaily", "https://www.bankersdaily.in", [
   { url: "https://www.bankersdaily.in/category/exams/recruitment/", channel: "jobs" },
   { url: "https://www.bankersdaily.in/category/admit-card/", channel: "admit-card" },
   { url: "https://www.bankersdaily.in/category/results/", channel: "result" },
 ]);
 
+// AffairsCloud
 const scrapeAffairsCloud = makeWPScraper("AffairsCloud", "https://affairscloud.com", [
   { url: "https://affairscloud.com/jobs/", channel: "jobs" },
   { url: "https://affairscloud.com/tag/admit-card/", channel: "admit-card" },
   { url: "https://affairscloud.com/tag/result/", channel: "result" },
 ]);
 
+// Aglasem
 const scrapeAglasem = makeWPScraper("Aglasem", "https://aglasem.com", [
   { url: "https://aglasem.com/category/jobs/", channel: "jobs" },
   { url: "https://aglasem.com/category/admit-card/", channel: "admit-card" },
   { url: "https://aglasem.com/category/result/", channel: "result" },
 ]);
 
+// StudyIQ
 const scrapeStudyIQ = makeWPScraper("StudyIQ", "https://studyiq.com", [
   { url: "https://studyiq.com/category/jobs/", channel: "jobs" },
   { url: "https://studyiq.com/category/admit-card/", channel: "admit-card" },
   { url: "https://studyiq.com/category/result/", channel: "result" },
 ]);
 
+// Examstocks
 const scrapeExamstocks = makeWPScraper("Examstocks", "https://www.examstocks.com", [
   { url: "https://www.examstocks.com/category/jobs/", channel: "jobs" },
   { url: "https://www.examstocks.com/category/admit-card/", channel: "admit-card" },
   { url: "https://www.examstocks.com/category/result/", channel: "result" },
 ]);
 
+/* ============== Aggregation ============== */
 const SOURCES = [
   scrapeTestbook,
   scrapeAdda247,
@@ -332,7 +344,9 @@ export default async function handler(req, res) {
 
     if (only.length) items = items.filter((x) => only.includes(x.channel));
     if (pick.length)
-      items = items.filter((x) => pick.some((s) => x.source.toLowerCase().includes(s.toLowerCase())));
+      items = items.filter((x) =>
+        pick.some((s) => x.source.toLowerCase().includes(s.toLowerCase()))
+      );
 
     items = dedupeSort(items);
     if (limit) items = items.slice(0, limit);
