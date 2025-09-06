@@ -1,12 +1,9 @@
 // api/ssc-notices.js
-// Force Node runtime (Cheerio needs Node, not Edge)
-export const config = { runtime: "nodejs18.x" };
 
-import * as cheerio from "cheerio";
+// Ensure this runs on a Node runtime (NOT Edge)
+export const config = { runtime: "nodejs22.x" }; // 18.x/20.x also OK on Vercel
 
-// Use the platform's built-in fetch (Vercel Node 18+)
-const UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
+import { load as loadHTML } from "cheerio";
 
 const BASE = "https://ssc.gov.in";
 const PAGES = [
@@ -16,11 +13,14 @@ const PAGES = [
   BASE
 ];
 
-// ---------- helpers ----------
-function safeAbsUrl(href, base = BASE) {
+// A normal browser-ish UA helps some CDNs
+const UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
+
+// ---------- small helpers ----------
+function absUrl(href, base = BASE) {
   try {
     if (!href) return null;
-    // Skip javascript: and mailto:
     if (/^\s*(javascript:|data:|mailto:)/i.test(href)) return null;
     return new URL(href, base).toString();
   } catch {
@@ -28,7 +28,7 @@ function safeAbsUrl(href, base = BASE) {
   }
 }
 
-function categoriesFrom(text = "") {
+function catsFrom(text = "") {
   const t = text.toUpperCase();
   const s = new Set();
   const add = (x) => s.add(x);
@@ -50,13 +50,15 @@ function nearDate(s = "") {
   );
   return m ? m[0] : "";
 }
+
 function nearSize(s = "") {
   const m = s.match(/\((\d+(?:\.\d+)?)\s*(KB|MB|GB)\)/i);
   return m ? m[0] : "";
 }
-function uniq(items, key = "pdf") {
+
+function uniq(arr, key = "pdf") {
   const seen = new Set();
-  return items.filter((x) => {
+  return arr.filter((x) => {
     const k = x[key] || x.title;
     if (!k || seen.has(k)) return false;
     seen.add(k);
@@ -64,42 +66,45 @@ function uniq(items, key = "pdf") {
   });
 }
 
-async function fetchWithTimeout(url, { timeoutMs = 15000, ...opts } = {}) {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(new Error("timeout")), timeoutMs);
+async function fetchHTML(url, { timeoutMs = 15000 } = {}) {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, {
-      headers: { "user-agent": UA, referer: BASE },
-      signal: ctrl.signal,
-      ...opts
+      headers: {
+        "user-agent": UA,
+        accept: "text/html,application/xhtml+xml",
+        "accept-language": "en-IN,en;q=0.9"
+      },
+      signal: controller.signal
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const html = await res.text();
-    if (!html || html.length < 500) throw new Error("empty HTML");
+    if (!html || html.length < 500) throw new Error("empty-or-short HTML");
     return html;
   } finally {
     clearTimeout(t);
   }
 }
 
-async function getFirstWorking() {
+async function getFirstWorkingPage() {
   let lastErr;
   for (const url of PAGES) {
     try {
-      const html = await fetchWithTimeout(url);
+      const html = await fetchHTML(url);
       return { url, html };
     } catch (e) {
       lastErr = e;
     }
   }
-  throw lastErr || new Error("Could not fetch SSC Notice Board");
+  throw lastErr || new Error("Could not fetch SSC notice board");
 }
 
-function parse(html, base = BASE) {
-  const $ = cheerio.load(html);
+function parseNotices(html, base = BASE) {
+  const $ = loadHTML(html);
   const items = [];
 
-  // Two passes: rich selectors, then fall back to any PDF links
+  // pass 1: obvious “noticey” containers
   const containers = [
     ".notice-list, .notices, .list-group, [class*='notice'], [id*='notice']",
     ".card, li, tr, article, section"
@@ -113,8 +118,8 @@ function parse(html, base = BASE) {
 
       $pdfs.each((__, a) => {
         const $a = $(a);
-        const href = safeAbsUrl($a.attr("href"), base);
-        if (!href) return;
+        const pdf = absUrl($a.attr("href"), base);
+        if (!pdf) return;
 
         const title = ($a.text() || $a.attr("title") || $el.text() || "")
           .replace(/\s+/g, " ")
@@ -123,33 +128,42 @@ function parse(html, base = BASE) {
         const blob = ($el.text() || "").replace(/\s+/g, " ").trim();
         const date = nearDate(blob);
         const size = nearSize(blob);
-        const categories = categoriesFrom(title);
+        const categories = catsFrom(title);
 
+        // try to find a “view/details” link near the PDF
         let view = "";
         const cand = $a
           .closest("div,li,tr,section,article")
           .find("a")
           .filter((i, ax) => {
-            const t = $(ax).text();
+            const t = $(ax).text() || "";
             const h = $(ax).attr("href") || "";
             return /view|preview|eye|details/i.test(t) || /view/i.test(h);
           });
         if (cand.length) {
-          const v = safeAbsUrl($(cand[0]).attr("href"), base);
+          const v = absUrl($(cand[0]).attr("href"), base);
           if (v) view = v;
         }
 
-        items.push({ title: title || "Untitled", pdf: href, view, date, size, categories });
+        items.push({
+          title: title || "Untitled",
+          pdf,
+          view,
+          date,
+          size,
+          categories
+        });
       });
     });
     if (items.length) break;
   }
 
+  // pass 2: fallback — ANY pdf link in the page
   if (!items.length) {
     $('a[href$=".pdf"], a[href*=".pdf?"]').each((_, a) => {
       const $a = $(a);
-      const href = safeAbsUrl($a.attr("href"), base);
-      if (!href) return;
+      const pdf = absUrl($a.attr("href"), base);
+      if (!pdf) return;
       const title = ($a.text() || $a.attr("title") || "")
         .replace(/\s+/g, " ")
         .trim();
@@ -160,25 +174,33 @@ function parse(html, base = BASE) {
         .trim();
       items.push({
         title: title || "Untitled",
-        pdf: href,
+        pdf,
         date: nearDate(near),
         size: nearSize(near),
-        categories: categoriesFrom(title)
+        categories: catsFrom(title)
       });
     });
   }
 
-  return uniq(items).map((x) => ({ ...x, ts: x.date ? Date.parse(x.date) || null : null }));
+  return uniq(items).map((x) => ({
+    ...x,
+    ts: x.date ? Date.parse(x.date) || null : null
+  }));
 }
 
-// ---------- handler ----------
+// ---------- HTTP handler ----------
 export default async function handler(req, res) {
-  res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=3600");
+  res.setHeader(
+    "Cache-Control",
+    "s-maxage=300, stale-while-revalidate=3600"
+  );
   try {
-    const { url, html } = await getFirstWorking();
-    const items = parse(html);
+    const { url, html } = await getFirstWorkingPage();
+    const items = parseNotices(html);
     res.status(200).json({ source: url, count: items.length, items });
   } catch (e) {
-    res.status(500).json({ error: String(e?.message || e), items: [] });
+    res
+      .status(500)
+      .json({ error: String(e?.message || e), items: [] });
   }
 }
